@@ -6,7 +6,7 @@ spec:
   selector:
     matchLabels:
       app: nginx
-  replicas: 100 # tells deployment to run 2 pods matching the template
+  replicas: 20 # tells deployment to run 2 pods matching the template
   template:
     metadata:
       labels:
@@ -38,12 +38,13 @@ spec:
               preference:
                 matchExpressions:
                   - key: standard
-                    operator: Exists
+                    operator: DoesNotExist
             - weight: 90
               preference:
                 matchExpressions:
                   - key: standard
-                    operator: DoesNotExist
+                    operator: Exists
+
 
 
                   
