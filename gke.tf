@@ -12,8 +12,12 @@ variable "gke_password" {
 }
 
 variable "gke_num_nodes" {
-  default     = 1
+  default     = 0
   description = "number of gke nodes"
+}
+variable "nat_tier" {
+  default     = "STANDARD"
+  description = "NAT TIER"
 }
 
 
@@ -44,6 +48,53 @@ resource "google_container_cluster" "primary" {
   cost_management_config {
     enabled = true
   }
+
+  master_authorized_networks_config {
+    #gcp_public_cidrs_access_enabled = true
+    cidr_blocks {
+      cidr_block   = "171.239.184.186/0"
+      display_name = "allow all"
+    }
+    # cidr_blocks {
+    #     cidr_block   = "34.69.69.69/32"
+    #     display_name = "megacorp-1-nat2"
+    # }
+    # cidr_blocks {
+    #     cidr_block   = "123.456.333.333/32"
+    #     display_name = "vpn-test"
+    # }
+  }
+
+  private_cluster_config {
+    enable_private_nodes    = true
+    enable_private_endpoint = true
+    master_ipv4_cidr_block  = "172.16.0.0/28"
+    master_global_access_config {
+      enabled = true
+    }
+  }
+}
+resource "google_compute_router" "router" {
+  name    = "nat-router"
+  network = google_compute_network.vpc.name
+  region  = var.region
+}
+
+resource "google_compute_project_default_network_tier" "default" {
+  network_tier = "STANDARD"
+}
+
+resource "google_compute_router_nat" "nat" {
+  name                               = "nat-gateway"
+  router                             = google_compute_router.router.name
+  region                             = google_compute_router.router.region
+  nat_ip_allocate_option             = "AUTO_ONLY"
+  source_subnetwork_ip_ranges_to_nat = "ALL_SUBNETWORKS_ALL_IP_RANGES"
+
+  log_config {
+    enable = false
+    filter = "ERRORS_ONLY"
+  }
 }
 
 # Separately Managed Node Pool
@@ -54,6 +105,7 @@ resource "google_container_node_pool" "primary_nodes" {
 
   #version = data.google_container_engine_versions.gke_version.release_channel_latest_version["STABLE"]
   node_count = var.gke_num_nodes
+
 
   node_config {
     taint {
@@ -87,7 +139,7 @@ resource "google_container_node_pool" "primary_nodes" {
   }
   autoscaling {
     min_node_count  = 0
-    max_node_count  = 2
+    max_node_count  = 0
     location_policy = "ANY"
   }
 }
@@ -100,15 +152,14 @@ resource "google_container_node_pool" "spot_nodes" {
   #version = data.google_container_engine_versions.gke_version.release_channel_latest_version["STABLE"]
   node_count = var.gke_num_nodes
   node_config {
-    # taint=[ {
-    #          "effect": "NO_SCHEDULE",
-    #            "key": "cloud.google.com/gke-spot",
-    #             "value": "true"
-    #       }]
-    # taint {
     #   effect = "NO_SCHEDULE"
     #   key    = "key1"
     #   value  = "value1"
+    # }
+    # taint {
+    #   effect = "NO_SCHEDULE"
+    #   key    = "key2"
+    #   value  = "value2"
     # }
     taint {
       effect = "NO_SCHEDULE"
