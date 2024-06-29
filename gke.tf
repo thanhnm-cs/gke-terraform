@@ -12,19 +12,26 @@ variable "gke_password" {
 }
 
 variable "gke_num_nodes" {
-  default     = 2
+  default     = 1
   description = "number of gke nodes"
+}
+
+
+
+data "google_container_engine_versions" "cluster" {
+  location       = "${var.region}-a"
+  version_prefix = "1.27."
 }
 
 # GKE cluster
 data "google_container_engine_versions" "gke_version" {
-  location = var.region
+  location       = var.region
   version_prefix = "1.27."
 }
 
 resource "google_container_cluster" "primary" {
   name     = "${var.project_id}-gke"
-  location = var.region
+  location = data.google_container_engine_versions.cluster.location
 
   # We can't create a cluster with no node pool defined, but we want to only use
   # separately managed node pools. So we create the smallest possible default
@@ -34,33 +41,106 @@ resource "google_container_cluster" "primary" {
 
   network    = google_compute_network.vpc.name
   subnetwork = google_compute_subnetwork.subnet.name
+  cost_management_config {
+    enabled = true
+  }
 }
 
 # Separately Managed Node Pool
 resource "google_container_node_pool" "primary_nodes" {
-  name       = google_container_cluster.primary.name
-  location   = var.region
-  cluster    = google_container_cluster.primary.name
-  
-  version = data.google_container_engine_versions.gke_version.release_channel_latest_version["STABLE"]
+  name     = google_container_cluster.primary.name
+  location = data.google_container_engine_versions.cluster.location
+  cluster  = google_container_cluster.primary.name
+
+  #version = data.google_container_engine_versions.gke_version.release_channel_latest_version["STABLE"]
   node_count = var.gke_num_nodes
 
   node_config {
+    taint {
+      effect = "NO_SCHEDULE"
+      key    = "cloud.google.com/gke-spot"
+      value  = "true"
+    }
+
+    labels = {
+      env                         = var.project_id
+      "cloud.google.com/gke-spot" = "true"
+      "demo"                      = "true"
+      "standard"                  = "true"
+    }
+
     oauth_scopes = [
       "https://www.googleapis.com/auth/logging.write",
       "https://www.googleapis.com/auth/monitoring",
     ]
 
-    labels = {
-      env = var.project_id
-    }
+
 
     # preemptible  = true
-    machine_type = "n1-standard-1"
+    machine_type = "e2-standard-2"
     tags         = ["gke-node", "${var.project_id}-gke"]
     metadata = {
       disable-legacy-endpoints = "true"
     }
+    disk_size_gb = 10
+    disk_type    = "pd-standard"
+  }
+  autoscaling {
+    min_node_count  = 0
+    max_node_count  = 2
+    location_policy = "ANY"
+  }
+}
+
+resource "google_container_node_pool" "spot_nodes" {
+  name     = "spot-${google_container_cluster.primary.name}"
+  location = data.google_container_engine_versions.cluster.location
+  cluster  = google_container_cluster.primary.name
+
+  #version = data.google_container_engine_versions.gke_version.release_channel_latest_version["STABLE"]
+  node_count = var.gke_num_nodes
+  node_config {
+    # taint=[ {
+    #          "effect": "NO_SCHEDULE",
+    #            "key": "cloud.google.com/gke-spot",
+    #             "value": "true"
+    #       }]
+    # taint {
+    #   effect = "NO_SCHEDULE"
+    #   key    = "key1"
+    #   value  = "value1"
+    # }
+    taint {
+      effect = "NO_SCHEDULE"
+      key    = "cloud.google.com/gke-spot"
+      value  = "true"
+    }
+    labels = {
+      env                         = var.project_id
+      "cloud.google.com/gke-spot" = "true"
+      "demo"                      = "true"
+      "standard"                  = "false"
+    }
+
+    oauth_scopes = [
+      "https://www.googleapis.com/auth/logging.write",
+      "https://www.googleapis.com/auth/monitoring",
+    ]
+    spot = true
+
+    # preemptible  = true
+    machine_type = "e2-standard-2"
+    tags         = ["gke-node", "${var.project_id}-gke"]
+    metadata = {
+      disable-legacy-endpoints = "true"
+    }
+    disk_size_gb = 10
+    disk_type    = "pd-standard"
+  }
+  autoscaling {
+    min_node_count  = 0
+    max_node_count  = 3
+    location_policy = "ANY"
   }
 }
 

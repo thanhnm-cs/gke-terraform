@@ -1,5 +1,5 @@
 # Copyright (c) HashiCorp, Inc.
 # SPDX-License-Identifier: MPL-2.0
 
-project_id = "REPLACE_ME"
-region     = "us-central1"
+project_id = "blogs-f7fe6"
+region     = "europe-west3"
